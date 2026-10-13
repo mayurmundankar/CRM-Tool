@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Client, Project, ProjectDeliverable } from "@/types/crm"
+import { realClientNote, realSheetPreview, SheetComment, SheetRevision } from "@/lib/sheet-notes"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,6 +36,11 @@ interface ClientPortalViewProps {
   onApproveDeliverable: (id: string, feedback?: string) => void
   onRequestChanges: (id: string, feedback: string) => void
   onBackToDashboard?: () => void
+  mode?: 'studio' | 'client'
+  shareUrl?: string
+  comments?: SheetComment[]
+  revisions?: SheetRevision[]
+  onAddComment?: (deliverableId: string, body: string) => void
 }
 
 export function ClientPortalView({
@@ -43,13 +49,22 @@ export function ClientPortalView({
   deliverables,
   onApproveDeliverable,
   onRequestChanges,
-  onBackToDashboard
+  onBackToDashboard,
+  mode = 'studio',
+  shareUrl,
+  comments = [],
+  revisions = [],
+  onAddComment,
 }: ClientPortalViewProps) {
   const [activePlanId, setActivePlanId] = React.useState<string>(deliverables[0]?.id || '')
   const [feedbackNote, setFeedbackNote] = React.useState('')
+  const [commentDraft, setCommentDraft] = React.useState('')
   const [justApproved, setJustApproved] = React.useState(false)
-
+  const [copied, setCopied] = React.useState(false)
+  const readySheets = deliverables.filter((item) => item.status === 'Pending Review')
   const activeDeliverable = deliverables.find(d => d.id === activePlanId) || deliverables[0]
+  const activeComments = comments.filter((item) => item.deliverableId === activeDeliverable?.id)
+  const activeRevisions = revisions.filter((item) => item.deliverableId === activeDeliverable?.id)
 
   const handleApprove = () => {
     if (!activeDeliverable) return
@@ -80,19 +95,45 @@ export function ClientPortalView({
   return (
     <div className="space-y-6">
       {/* Client Portal Mode Banner */}
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card p-3 px-4 text-xs">
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 px-4 text-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Badge variant="gold" className="text-[10px]">Client Preview Mode</Badge>
+          <Badge variant="gold" className="text-[10px]">{mode === 'client' ? 'Your project' : 'Client Preview Mode'}</Badge>
           <span className="text-muted-foreground">
-            You are viewing the interactive client-facing portal for <strong>{client.name}</strong> ({client.property_type}).
+            {mode === 'client'
+              ? `Review the latest drawings for ${project?.name || client.name}. Approve a sheet or leave a comment on it.`
+              : <>Studio preview for <strong>{client.name}</strong> ({client.property_type}).</>}
           </span>
         </div>
-        {onBackToDashboard && (
-          <Button variant="outline" size="sm" onClick={onBackToDashboard} className="h-7 text-xs">
-            Return to CRM Pipeline
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {shareUrl && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={async () => {
+                await navigator.clipboard.writeText(shareUrl)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              }}
+            >
+              <Share2 className="mr-1 h-3 w-3" />
+              {copied ? 'Link copied' : 'Copy client link'}
+            </Button>
+          )}
+          {onBackToDashboard && (
+            <Button variant="outline" size="sm" onClick={onBackToDashboard} className="h-7 text-xs">
+              Return to CRM Pipeline
+            </Button>
+          )}
+        </div>
       </div>
+
+      {mode === 'client' && readySheets.length > 0 && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+          New work is ready for review: {readySheets.map((item) => item.sheet_number).join(', ')}. The latest approved version stays marked on each sheet.
+        </div>
+      )}
 
       {/* Hero Estate Header */}
       <div className="relative overflow-hidden rounded-lg border border-border bg-card p-6 sm:p-8">
@@ -234,7 +275,9 @@ export function ClientPortalView({
                 </div>
                 <CardTitle className="text-lg mt-1">{activeDeliverable?.title}</CardTitle>
                 <CardDescription>
-                  Review high-resolution architectural layout, switching circuits, and fixture placement.
+                  {realSheetPreview(activeDeliverable?.preview_url)
+                    ? 'The drawing attached to this sheet.'
+                    : 'No drawing file is attached. You can still approve this issue or ask for a change.'}
                 </CardDescription>
               </div>
 
@@ -250,24 +293,84 @@ export function ClientPortalView({
 
             <CardContent className="p-4 space-y-4">
               {/* Preview image */}
-              <div className="relative rounded-xl overflow-hidden border border-border group bg-neutral-950">
-                <img
-                  src={activeDeliverable?.preview_url}
-                  alt={activeDeliverable?.title}
-                  className="w-full h-80 object-cover"
-                />
-                <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs text-white border border-white/20">
-                  Version {activeDeliverable?.version} • Approved for CAD Millwork Fabrication
+              <div className="relative overflow-hidden rounded-xl border border-border bg-neutral-950">
+                {realSheetPreview(activeDeliverable?.preview_url) ? (
+                  <img
+                    src={realSheetPreview(activeDeliverable?.preview_url)}
+                    alt={activeDeliverable?.title}
+                    className="h-56 w-full object-contain sm:h-80"
+                  />
+                ) : (
+                  <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-neutral-400 sm:h-48">
+                    Sheet {activeDeliverable?.sheet_number}. No drawing file is attached yet.
+                  </div>
+                )}
+                <div className="absolute bottom-3 left-3 rounded-lg border border-white/20 bg-black/75 px-3 py-1.5 text-xs text-white">
+                  Version {activeDeliverable?.version}
                 </div>
               </div>
 
-              {/* Review notes if any */}
-              {activeDeliverable?.client_feedback && (
-                <div className="rounded-lg bg-muted/40 p-3 text-xs border border-border/60">
-                  <span className="font-semibold text-foreground block mb-0.5">Recorded Review Notes:</span>
-                  <p className="italic text-muted-foreground">{activeDeliverable.client_feedback}</p>
+              {realClientNote(activeDeliverable?.client_feedback) && (
+                <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+                  <span className="mb-0.5 block font-semibold text-foreground">Latest review note</span>
+                  <p className="text-muted-foreground">{realClientNote(activeDeliverable?.client_feedback)}</p>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Comments on this sheet</h4>
+                {activeComments.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No comments on this sheet yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {activeComments.map((comment) => (
+                      <li key={comment.id} className="rounded-lg border border-border px-3 py-2 text-xs">
+                        {comment.body}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {onAddComment && activeDeliverable && (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Textarea
+                      rows={2}
+                      value={commentDraft}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                      placeholder="Comment on this sheet"
+                      className="text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      disabled={!commentDraft.trim()}
+                      onClick={() => {
+                        onAddComment(activeDeliverable.id, commentDraft.trim())
+                        setCommentDraft('')
+                      }}
+                    >
+                      Add comment
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Revision history</h4>
+                {activeRevisions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No earlier revisions recorded. The version on the sheet is the current one.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {activeRevisions.map((revision) => (
+                      <li key={revision.id} className="text-xs text-muted-foreground">
+                        <span className="text-foreground">{revision.version}</span> · {revision.status}
+                        <span className="block">{revision.note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
               {/* Approval controls */}
               <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3">

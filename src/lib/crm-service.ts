@@ -7,6 +7,7 @@ import {
   PipelineStage,
   Project,
   ProjectDeliverable,
+  StudioTask,
 } from '@/types/crm'
 import { supabase, isSupabaseConfigured } from './supabase'
 import {
@@ -24,6 +25,11 @@ const STORAGE_KEY_DELIVERABLES = 'crm_interior_deliverables'
 const STORAGE_KEY_COMMUNICATIONS = 'crm_interior_communications'
 const STORAGE_KEY_INVOICES = 'crm_interior_invoices'
 const STORAGE_KEY_INQUIRIES = 'crm_interior_inquiries'
+const STORAGE_KEY_TASKS = 'crm_interior_tasks'
+
+function missingTable(error: { code?: string; message?: string } | null) {
+  return error?.code === 'PGRST205' || /schema cache/i.test(error?.message || '')
+}
 
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -74,14 +80,22 @@ function buildProject(client: Client, now = new Date().toISOString()): Project {
   }
 }
 
-async function persistProject(project: Project) {
+function projectRow(project: Project) {
+  const row = { ...project }
+  delete row.deliverables_count
+  return row
+}
+
+async function persistProject(project: Project): Promise<boolean> {
   if (isSupabaseConfigured && supabase) {
-    const { error } = await supabase.from('projects').insert([project])
-    if (!error) return
+    const { error } = await supabase.from('projects').insert([projectRow(project)])
+    if (!error) return true
     console.error('Supabase persistProject error:', error)
+    return false
   }
   const current = getFromStorage<Project[]>(STORAGE_KEY_PROJECTS, [])
   saveToStorage(STORAGE_KEY_PROJECTS, [project, ...current])
+  return true
 }
 
 async function persistLog(log: CommunicationLog): Promise<CommunicationLog> {
@@ -116,6 +130,7 @@ export const CrmService = {
     localStorage.removeItem(STORAGE_KEY_COMMUNICATIONS)
     localStorage.removeItem(STORAGE_KEY_INVOICES)
     localStorage.removeItem(STORAGE_KEY_INQUIRIES)
+    localStorage.removeItem(STORAGE_KEY_TASKS)
   },
 
   async getClients(): Promise<Client[]> {
@@ -199,7 +214,12 @@ export const CrmService = {
   async getProjects(): Promise<Project[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
-      if (!error && data) return data as Project[]
+      if (!error && data) {
+        return data.map((project) => ({
+          ...project,
+          deliverables_count: (project as Project).deliverables_count ?? 0,
+        })) as Project[]
+      }
       if (error) console.error('Supabase getProjects error:', error)
     }
     return getFromStorage<Project[]>(STORAGE_KEY_PROJECTS, [])
@@ -210,7 +230,8 @@ export const CrmService = {
     const existing = projects.find(project => project.client_id === client.id)
     if (existing) return existing
     const project = buildProject(client)
-    await persistProject(project)
+    const saved = await persistProject(project)
+    if (!saved) throw new Error(`Could not save a project for ${client.name}`)
     return project
   },
 
@@ -290,18 +311,20 @@ export const CrmService = {
     clientName: string,
     recipientPhone: string,
     message: string,
-    triggerType: CommunicationLog['trigger_type'] = 'manual'
+    triggerType: CommunicationLog['trigger_type'] = 'manual',
+    status: CommunicationLog['status'] = 'sent',
+    channel: CommunicationLog['channel'] = 'whatsapp'
   ): Promise<CommunicationLog> {
     return persistLog({
       id: generateUUID(),
       client_id: clientId,
       client_name: clientName,
-      channel: 'whatsapp',
+      channel,
       recipient_phone_or_email: recipientPhone,
       trigger_type: triggerType,
       message,
       sent_at: new Date().toISOString(),
-      status: 'sent',
+      status,
     })
   },
 
@@ -409,6 +432,49 @@ export const CrmService = {
     const updated = { ...current[index], ...updates }
     current[index] = updated
     saveToStorage(STORAGE_KEY_INQUIRIES, current)
+    return updated
+  },
+
+  async getTasks(): Promise<StudioTask[]> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('studio_tasks').select('*').order('due_date', { ascending: true })
+      if (!error && data) return data as StudioTask[]
+      if (error && !missingTable(error)) console.error('Supabase getTasks error:', error)
+    }
+    return getFromStorage<StudioTask[]>(STORAGE_KEY_TASKS, [])
+  },
+
+  async addTask(input: Omit<StudioTask, 'id' | 'created_at' | 'status'> & { status?: StudioTask['status'] }): Promise<StudioTask> {
+    const task: StudioTask = {
+      ...input,
+      id: generateUUID(),
+      status: input.status || 'Open',
+      created_at: new Date().toISOString(),
+    }
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('studio_tasks').insert([task]).select().single()
+      if (!error && data) return data as StudioTask
+      if (error && !missingTable(error)) console.error('Supabase addTask error:', error)
+      if (!error) return task
+    }
+    const current = getFromStorage<StudioTask[]>(STORAGE_KEY_TASKS, [])
+    saveToStorage(STORAGE_KEY_TASKS, [task, ...current])
+    return task
+  },
+
+  async updateTask(id: string, updates: Partial<StudioTask>): Promise<StudioTask | null> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('studio_tasks').update(updates).eq('id', id).select().single()
+      if (!error && data) return data as StudioTask
+      if (error && !missingTable(error)) console.error('Supabase updateTask error:', error)
+      if (!error) return null
+    }
+    const current = getFromStorage<StudioTask[]>(STORAGE_KEY_TASKS, [])
+    const index = current.findIndex((task) => task.id === id)
+    if (index === -1) return null
+    const updated = { ...current[index], ...updates }
+    current[index] = updated
+    saveToStorage(STORAGE_KEY_TASKS, current)
     return updated
   },
 

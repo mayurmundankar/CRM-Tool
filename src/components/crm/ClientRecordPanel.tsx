@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Client, CommunicationLog, Invoice, PipelineStage, Project, ProjectDeliverable } from "@/types/crm"
 import { formatCurrency, formatDate } from "@/lib/format"
+import { displayLogMessage } from "@/lib/sheet-notes"
 import { PIPELINE_STAGES } from "@/lib/studio"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -164,7 +165,7 @@ export function ClientRecordPanel({
               <ul className="mt-2 space-y-3">
                 {logs.map((log) => (
                   <li key={log.id}>
-                    <p className="text-sm leading-relaxed">{log.message}</p>
+                    <p className="text-sm leading-relaxed">{displayLogMessage(log.message)}</p>
                     <p className="text-[11px] text-muted-foreground">
                       {log.channel} · {formatDate(log.sent_at)}
                     </p>

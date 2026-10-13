@@ -17,13 +17,22 @@ import {
   Zap,
   ShieldCheck,
   User,
-  ArrowRight
+  ArrowRight,
 } from "lucide-react"
+import { readConsent, writeConsent } from "@/lib/consent"
 
 interface WhatsAppHubProps {
   logs: CommunicationLog[]
   clients: Client[]
-  onSendNotification: (clientId: string, clientName: string, phone: string, message: string, triggerType: CommunicationLog['trigger_type']) => void
+  onSendNotification: (
+    clientId: string,
+    clientName: string,
+    phone: string,
+    message: string,
+    triggerType: CommunicationLog['trigger_type'],
+    status?: CommunicationLog['status'],
+    channel?: CommunicationLog['channel']
+  ) => void
 }
 
 const TEMPLATES = [
@@ -54,13 +63,20 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
   const [messageText, setMessageText] = React.useState('')
   const [selectedTemplate, setSelectedTemplate] = React.useState('plan_ready')
   const [justSent, setJustSent] = React.useState(false)
+  const [channel, setChannel] = React.useState<'whatsapp' | 'email'>('whatsapp')
+  const [consentEmail, setConsentEmail] = React.useState(false)
+  const [consentWhatsapp, setConsentWhatsapp] = React.useState(false)
+  const [sendNote, setSendNote] = React.useState<string | null>(null)
+  const [forceNext, setForceNext] = React.useState(false)
 
   const selectedClient = clients.find(c => c.id === selectedClientId) || clients[0]
 
   React.useEffect(() => {
-    if (selectedClient) {
-      applyTemplate(selectedTemplate, selectedClient)
-    }
+    if (!selectedClient) return
+    const consent = readConsent(selectedClient.id)
+    setConsentEmail(consent.email)
+    setConsentWhatsapp(consent.whatsapp)
+    applyTemplate(selectedTemplate, selectedClient)
   }, [selectedClientId])
 
   const applyTemplate = (templateId: string, client: Client) => {
@@ -81,20 +97,66 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
     }
   }
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault()
+  const dispatch = async (force: boolean, logOnly: boolean) => {
     if (!selectedClient || !messageText) return
+    setSendNote(null)
+    const consent = { email: consentEmail, whatsapp: consentWhatsapp }
+    writeConsent(selectedClient.id, consent)
 
+    if (logOnly) {
+      onSendNotification(selectedClient.id, selectedClient.name, selectedClient.phone, messageText, selectedTemplate as CommunicationLog['trigger_type'], 'logged', channel)
+      setSendNote('Logged on the client record. Nothing was sent.')
+      setJustSent(true)
+      return
+    }
+
+    const recentMessages = logs
+      .filter((log) => log.client_id === selectedClient.id)
+      .map((log) => ({ message: log.message, sentAt: log.sent_at }))
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel,
+        email: selectedClient.email,
+        phone: selectedClient.phone,
+        clientName: selectedClient.name,
+        message: messageText,
+        consentEmail,
+        consentWhatsapp,
+        force,
+        recentMessages,
+      }),
+    })
+    const data = await res.json()
+    if (data.status === 'duplicate') {
+      setForceNext(true)
+      setSendNote(data.detail)
+      return
+    }
+    if (data.status === 'consent') {
+      setSendNote(data.detail)
+      return
+    }
+    const status: CommunicationLog['status'] = data.status === 'delivered' ? 'delivered' : data.status === 'failed' ? 'failed' : 'logged'
+    const recipient = channel === 'email' ? selectedClient.email : selectedClient.phone
     onSendNotification(
       selectedClient.id,
       selectedClient.name,
-      selectedClient.phone,
+      recipient,
       messageText,
-      selectedTemplate as CommunicationLog['trigger_type']
+      selectedTemplate as CommunicationLog['trigger_type'],
+      status,
+      channel
     )
-
+    setForceNext(false)
+    setSendNote(data.detail || 'Saved.')
     setJustSent(true)
-    setTimeout(() => setJustSent(false), 2500)
+  }
+
+  const handleSend = (event: React.FormEvent) => {
+    event.preventDefault()
+    void dispatch(forceNext, false)
   }
 
   return (
@@ -214,17 +276,42 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
                   />
                 </div>
 
-                <Button
-                  type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>Dispatch WhatsApp Notification</span>
-                </Button>
+                <div className="space-y-2 rounded-lg border border-border px-3 py-3 text-xs">
+                  <p className="font-semibold uppercase text-muted-foreground">Consent and channel</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setChannel('whatsapp')} className={`rounded-md border px-2 py-1 ${channel === 'whatsapp' ? 'border-foreground' : 'border-border text-muted-foreground'}`}>WhatsApp</button>
+                    <button type="button" onClick={() => setChannel('email')} className={`rounded-md border px-2 py-1 ${channel === 'email' ? 'border-foreground' : 'border-border text-muted-foreground'}`}>Email</button>
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={consentWhatsapp} onChange={(event) => setConsentWhatsapp(event.target.checked)} />
+                    Client agreed to WhatsApp
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={consentEmail} onChange={(event) => setConsentEmail(event.target.checked)} />
+                    Client agreed to email
+                  </label>
+                  <p className="text-muted-foreground">Without a provider key, an approved send is kept on the log and is not delivered. Duplicate text from the last day asks before sending again.</p>
+                </div>
 
-                {justSent && (
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-500 font-medium py-1 animate-fadeIn">
-                    <CheckCheck className="h-4 w-4" /> Notification delivered successfully!
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="submit"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2"
+                  >
+                    <Send className="h-4 w-4" />
+                    <span>{forceNext ? 'Send again' : channel === 'email' ? 'Send email' : 'Send WhatsApp'}</span>
+                  </Button>
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => void dispatch(false, true)}>
+                    Log draft only
+                  </Button>
+                </div>
+
+                {sendNote && (
+                  <p className="text-xs text-muted-foreground">{sendNote}</p>
+                )}
+                {justSent && !sendNote && (
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-500 font-medium py-1">
+                    <CheckCheck className="h-4 w-4" /> Saved.
                   </div>
                 )}
               </form>
@@ -304,9 +391,9 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
 
                   <div className="flex items-center gap-3 shrink-0 text-muted-foreground text-[11px]">
                     <span>{new Date(log.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    <span className="flex items-center gap-1 text-emerald-500 font-medium">
+                    <span className={`flex items-center gap-1 font-medium ${log.status === 'failed' ? 'text-destructive' : 'text-emerald-500'}`}>
                       <CheckCheck className="h-3.5 w-3.5" />
-                      Delivered
+                      {log.status === 'failed' ? 'Failed' : log.status === 'logged' ? 'Logged' : log.status === 'delivered' ? 'Delivered' : 'Sent'}
                     </span>
                   </div>
                 </div>

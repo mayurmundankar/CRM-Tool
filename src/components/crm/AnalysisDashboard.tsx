@@ -1,17 +1,26 @@
 "use client"
 
-import { Client, Inquiry, Invoice, ProjectDeliverable } from "@/types/crm"
+import { Client, Inquiry, Invoice, Project, ProjectDeliverable, StudioTask } from "@/types/crm"
 import { formatCurrency } from "@/lib/format"
 import { PIPELINE_STAGES } from "@/lib/studio"
+import { buildTodayItems, factualBriefing, TodayItem } from "@/lib/today"
+import { generateWithGroq } from "@/lib/groq-client"
 import { PageHeading } from "@/components/crm/PageHeading"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import * as React from "react"
 
 interface AnalysisDashboardProps {
   clients: Client[]
   inquiries: Inquiry[]
   invoices: Invoice[]
   deliverables: ProjectDeliverable[]
+  projects?: Project[]
+  tasks?: StudioTask[]
   onOpenSection: (section: string) => void
+  onOpenInsight?: (item: TodayItem) => void
+  onCompleteTask?: (id: string) => void
+  onAddTask?: (title: string) => void
 }
 
 export function AnalysisDashboard({
@@ -19,7 +28,12 @@ export function AnalysisDashboard({
   inquiries,
   invoices,
   deliverables,
+  projects = [],
+  tasks = [],
   onOpenSection,
+  onOpenInsight,
+  onCompleteTask,
+  onAddTask,
 }: AnalysisDashboardProps) {
   const pipelineValue = clients.reduce((sum, client) => sum + (client.budget || 0), 0)
   const openInquiries = inquiries.filter((inquiry) => inquiry.status === 'New' || inquiry.status === 'Qualified')
@@ -55,13 +69,91 @@ export function AnalysisDashboard({
     { label: 'Hours saved', value: hoursSaved.toFixed(1), detail: 'From automated sheets', section: 'deliverables' },
   ]
 
+  const todayItems = React.useMemo(
+    () => buildTodayItems({ clients, projects, deliverables, invoices, inquiries, tasks }),
+    [clients, projects, deliverables, invoices, inquiries, tasks]
+  )
+  const recordBriefing = factualBriefing(todayItems)
+  const [briefing, setBriefing] = React.useState(recordBriefing)
+  const [taskTitle, setTaskTitle] = React.useState('')
+
+  React.useEffect(() => {
+    setBriefing(recordBriefing)
+    let cancelled = false
+    const facts = todayItems.map((item) => `- ${item.title}. ${item.reason}`).join('\n') || '- none'
+    void generateWithGroq({
+      task: 'chat',
+      systemPrompt: 'You write a one or two sentence daily briefing for an interior design studio. Use only the facts given. Do not invent names, amounts, or dates. Do not use markdown.',
+      prompt: `Rewrite this briefing in the same facts, as a short spoken note:\n${recordBriefing}\n\nItems:\n${facts}`,
+    }).then((result) => {
+      if (!cancelled && result.content) setBriefing(result.content.trim())
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordBriefing, todayItems])
+
   return (
     <div>
       <PageHeading
         eyebrow="Studio"
-        title="Where the work stands"
-        description="Pipeline value, open inquiries, unpaid fees, and time saved on sheets. All of it comes from the records in this studio."
+        title="What needs attention today"
+        description="A briefing from the records in this studio, then the pipeline, inquiries, fees, and hours saved."
       />
+
+      <section className="mb-6 rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-5 py-4">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Today</p>
+          <p className="mt-2 text-sm leading-relaxed">{briefing}</p>
+        </div>
+        {todayItems.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-muted-foreground">No overdue work, pending approvals, or unpaid invoices.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {todayItems.map((item) => {
+              const taskId = item.id.startsWith('task-') ? item.id.slice(5) : ''
+              return (
+                <li key={item.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={() => (onOpenInsight ? onOpenInsight(item) : onOpenSection(item.section))}
+                    className="min-w-0 text-left"
+                  >
+                    <p className="text-sm">{item.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
+                  </button>
+                  {taskId && onCompleteTask && (
+                    <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={() => onCompleteTask(taskId)}>
+                      Done
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {onAddTask && (
+          <form
+            className="flex gap-2 border-t border-border px-5 py-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!taskTitle.trim()) return
+              onAddTask(taskTitle.trim())
+              setTaskTitle('')
+            }}
+          >
+            <input
+              value={taskTitle}
+              onChange={(event) => setTaskTitle(event.target.value)}
+              placeholder="Add a follow-up for tomorrow"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button type="submit" size="sm" variant="outline" className="h-8 text-xs" disabled={!taskTitle.trim()}>
+              Add task
+            </Button>
+          </form>
+        )}
+      </section>
 
       <div className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map((kpi) => (

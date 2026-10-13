@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ProjectDeliverable, DeliverableType, ApprovalStatus, Project } from "@/types/crm"
+import { realClientNote, realSheetPreview } from "@/lib/sheet-notes"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -57,6 +58,13 @@ export function DeliverablesTracker({
     luxTarget: '300 Lux (Warm 2700K)',
   })
 
+  React.useEffect(() => {
+    setGenData((current) => {
+      if (current.projectId && projects.some((project) => project.id === current.projectId)) return current
+      return { ...current, projectId: projects[0]?.id || '' }
+    })
+  }, [projects])
+
   const filteredDeliverables = deliverables.filter((d) => {
     if (selectedTypeFilter === 'ALL') return true
     return d.type === selectedTypeFilter
@@ -67,6 +75,7 @@ export function DeliverablesTracker({
   const pendingCount = deliverables.filter(d => d.status === 'Pending Review').length
 
   const handleStartAiGeneration = () => {
+    if (!genData.projectId) return
     setIsGenerating(true)
     setGenerationStep(1)
 
@@ -82,13 +91,10 @@ export function DeliverablesTracker({
         title: `${genData.room} Automated ${genData.type}`,
         type: genData.type,
         sheet_number: genData.sheetNumber,
-        status: 'Pending Review',
+        status: 'Draft',
         ai_automated: true,
         time_saved_min: savedMinutes,
-        preview_url: genData.type === 'Lighting Plan'
-          ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=900&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=900&auto=format&fit=crop&q=80',
-        client_feedback: `Generated in 4m 15s via Revit Automation Engine. Slashed manual drafting time from 2.5 hours to minutes.`,
+        preview_url: '',
         version: 'v1.0'
       })
 
@@ -106,7 +112,7 @@ export function DeliverablesTracker({
 
   const openReviewModal = (del: ProjectDeliverable) => {
     setActiveDeliverable(del)
-    setReviewFeedback(del.client_feedback || '')
+    setReviewFeedback(realClientNote(del.client_feedback))
     setIsReviewModalOpen(true)
   }
 
@@ -194,12 +200,18 @@ export function DeliverablesTracker({
             <Card key={item.id} className="overflow-hidden border-border hover:border-foreground/20 flex flex-col group">
               {/* Preview Thumbnail */}
               <div className="relative h-48 w-full overflow-hidden bg-neutral-950">
-                <img
-                  src={item.preview_url}
-                  alt={item.title}
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-90 group-hover:opacity-100"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                {realSheetPreview(item.preview_url) ? (
+                  <img
+                    src={realSheetPreview(item.preview_url)}
+                    alt={item.title}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-neutral-400">
+                    Sheet {item.sheet_number}. No drawing file is attached.
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
                 {/* Top badges */}
                 <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
@@ -247,10 +259,10 @@ export function DeliverablesTracker({
                   </p>
                 </div>
 
-                {item.client_feedback && (
+                {realClientNote(item.client_feedback) && (
                   <div className="rounded-lg bg-muted/40 p-2.5 text-xs text-muted-foreground border border-border/50">
-                    <span className="font-medium text-foreground block text-[11px] mb-0.5">Review Note:</span>
-                    <p className="italic line-clamp-2">&quot;{item.client_feedback}&quot;</p>
+                    <span className="font-medium text-foreground block text-[11px] mb-0.5">Review note</span>
+                    <p className="line-clamp-2">{realClientNote(item.client_feedback)}</p>
                   </div>
                 )}
               </CardContent>
@@ -323,13 +335,18 @@ export function DeliverablesTracker({
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase">Target Project</label>
                 <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                   value={genData.projectId}
                   onChange={(e) => setGenData({ ...genData, projectId: e.target.value })}
+                  disabled={projects.length === 0}
                 >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.client_name})</option>
-                  ))}
+                  {projects.length === 0 ? (
+                    <option value="">No projects yet. Add a client first.</option>
+                  ) : (
+                    projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.client_name})</option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -377,7 +394,7 @@ export function DeliverablesTracker({
 
               <DialogFooter className="pt-2">
                 <Button variant="outline" onClick={() => setIsGenerateModalOpen(false)}>Cancel</Button>
-                <Button onClick={handleStartAiGeneration}>
+                <Button onClick={handleStartAiGeneration} disabled={!genData.projectId || projects.length === 0}>
                   Execute AI Automation
                 </Button>
               </DialogFooter>
@@ -392,24 +409,35 @@ export function DeliverablesTracker({
           <DialogHeader>
             <DialogTitle>Deliverable review</DialogTitle>
             <DialogDescription>
-              {activeDeliverable?.title} ({activeDeliverable?.sheet_number})
+              {activeDeliverable?.title} ({activeDeliverable?.sheet_number}). This records the studio decision. It does not open a Revit file.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="rounded-lg overflow-hidden border border-border">
-              <img
-                src={activeDeliverable?.preview_url}
-                alt="Plan Preview"
-                className="w-full h-44 object-cover"
-              />
-            </div>
+            {realSheetPreview(activeDeliverable?.preview_url) ? (
+              <div className="overflow-hidden rounded-lg border border-border bg-neutral-950">
+                <img
+                  src={realSheetPreview(activeDeliverable?.preview_url)}
+                  alt={activeDeliverable?.title || 'Sheet'}
+                  className="h-44 w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-muted/40 px-4 py-5 text-sm text-muted-foreground">
+                No drawing file is attached to {activeDeliverable?.sheet_number}. Approving, or asking for changes, updates the sheet status the client sees. It does not display a plan.
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              {activeDeliverable?.type} · {activeDeliverable?.version} · {activeDeliverable?.status}
+              {activeDeliverable?.ai_automated ? ` · ${activeDeliverable.time_saved_min} minutes saved on drafting` : ''}
+            </p>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase">Client / Designer Feedback</label>
+              <label className="text-xs font-semibold text-muted-foreground uppercase">Note</label>
               <Textarea
                 rows={3}
-                placeholder="Enter client review notes, lighting adjustment requests, or contractor remarks..."
+                placeholder="What should change, or why this sheet is approved."
                 value={reviewFeedback}
                 onChange={(e) => setReviewFeedback(e.target.value)}
               />
@@ -419,6 +447,7 @@ export function DeliverablesTracker({
               <Button
                 variant="destructive"
                 size="sm"
+                disabled={!reviewFeedback.trim()}
                 onClick={() => handleSaveReview('Changes Requested')}
               >
                 Request Revisions

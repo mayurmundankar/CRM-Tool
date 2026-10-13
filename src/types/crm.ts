@@ -112,7 +112,17 @@ export interface CommunicationLog {
     | 'manual'
   message: string
   sent_at: string
-  status: 'sent' | 'delivered' | 'read'
+  status: 'sent' | 'delivered' | 'read' | 'logged' | 'failed'
+}
+
+export interface StudioTask {
+  id: string
+  title: string
+  client_id?: string
+  client_name?: string
+  due_date: string
+  status: 'Open' | 'Done'
+  created_at: string
 }
 
 export interface Invoice {

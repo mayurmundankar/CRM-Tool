@@ -4,6 +4,8 @@ import * as React from "react"
 import { Client, CommunicationLog, Inquiry, Invoice, Project, ProjectDeliverable } from "@/types/crm"
 import { generateWithGroq } from "@/lib/groq-client"
 import { buildChatSystemPrompt } from "@/lib/studio-context"
+import { ActionProposal, proposeStudioAction } from "@/lib/studio-actions"
+import { readConsent } from "@/lib/consent"
 import { PageHeading } from "@/components/crm/PageHeading"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,6 +17,7 @@ interface StudioChatProps {
   invoices: Invoice[]
   inquiries: Inquiry[]
   logs: CommunicationLog[]
+  onApproveAction?: (proposal: ActionProposal) => Promise<string>
 }
 
 interface ChatMessage {
@@ -95,9 +98,11 @@ function ChatAnswer({ content }: { content: string }) {
 }
 
 const SUGGESTIONS = [
-  'What is the status of the Hale villa?',
   'Which invoices are still unpaid?',
-  'Summarize Eleanor Vance.',
+  'Create a task to follow up on the pending kitchen drawings.',
+  'Draft an update for clients waiting for approval.',
+  'Prepare a milestone invoice for this project.',
+  'Show delayed projects and suggest how to recover them.',
 ]
 
 export function StudioChat({
@@ -107,11 +112,13 @@ export function StudioChat({
   invoices,
   inquiries,
   logs,
+  onApproveAction,
 }: StudioChatProps) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
   const [draft, setDraft] = React.useState('')
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [proposal, setProposal] = React.useState<ActionProposal | null>(null)
   const lastMessageRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -126,6 +133,15 @@ export function StudioChat({
     setMessages(history)
     setDraft('')
     setError(null)
+    setProposal(null)
+
+    const proposed = proposeStudioAction(question, { clients, projects, deliverables, invoices, inquiries }, readConsent)
+    if (proposed) {
+      setProposal(proposed)
+      setMessages((current) => [...current, { role: 'assistant', content: proposed.summary }])
+      return
+    }
+
     setPending(true)
 
     const transcript = history
@@ -159,7 +175,7 @@ export function StudioChat({
       <PageHeading
         eyebrow="FlowMS"
         title="Studio Chat"
-        description="Ask about any client, project, sheet, inquiry, or invoice. Answers come from the records currently in the studio."
+        description="Ask about the studio, or ask it to draft a task, an update, or an invoice. Changes wait for your approval."
       />
 
       <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-card">
@@ -205,6 +221,37 @@ export function StudioChat({
           ))}
 
           {pending && <p className="text-sm text-muted-foreground">Looking through the studio records…</p>}
+          {proposal && (
+            <div className="rounded-lg border border-border bg-background px-4 py-3">
+              <p className="text-sm font-medium">{proposal.summary}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{proposal.preview}</p>
+              <p className="mt-2 text-xs text-muted-foreground">{proposal.reason}</p>
+              {proposal.blockReason && <p className="mt-2 text-xs text-destructive">{proposal.blockReason}</p>}
+              <div className="mt-3 flex gap-2">
+                {proposal.needsApproval && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!proposal.ready || pending || !onApproveAction}
+                    onClick={() => {
+                      if (!onApproveAction) return
+                      setPending(true)
+                      void onApproveAction(proposal).then((result) => {
+                        setPending(false)
+                        setProposal(null)
+                        setMessages((current) => [...current, { role: 'assistant', content: result }])
+                      })
+                    }}
+                  >
+                    Approve
+                  </Button>
+                )}
+                <Button type="button" size="sm" variant="outline" onClick={() => setProposal(null)}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 

@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "FlowMS • Interior Design CRM",
   description: "FlowMS is a studio CRM for interior design teams. Pipeline, inquiries, Revit deliverables, client approvals, invoices, and a project-aware studio chat.",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
 }
 
 export default function RootLayout({
@@ -28,6 +32,11 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `try{if(localStorage.getItem('crm_theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}`,
+          }}
+        />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `.dark input[type="date"]::-webkit-calendar-picker-indicator,.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,.dark input[type="time"]::-webkit-calendar-picker-indicator{cursor:pointer;filter:invert(1);opacity:.9}`,
           }}
         />
       </head>

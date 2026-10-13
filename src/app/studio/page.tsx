@@ -15,6 +15,10 @@ import { ClientRecordPanel } from "@/components/crm/ClientRecordPanel"
 import { NewClientModal } from "@/components/crm/NewClientModal"
 import { Button } from "@/components/ui/button"
 import { CrmService } from "@/lib/crm-service"
+import { ActionProposal } from "@/lib/studio-actions"
+import { commentMessage, commentsFor, revisionMessage, revisionsFor } from "@/lib/sheet-notes"
+import { readConsent } from "@/lib/consent"
+import { TodayItem } from "@/lib/today"
 import {
   ApprovalStatus,
   Client,
@@ -25,6 +29,7 @@ import {
   PipelineStage,
   Project,
   ProjectDeliverable,
+  StudioTask,
 } from "@/types/crm"
 
 export default function StudioPage() {
@@ -35,6 +40,8 @@ export default function StudioPage() {
   const [communications, setCommunications] = React.useState<CommunicationLog[]>([])
   const [invoices, setInvoices] = React.useState<Invoice[]>([])
   const [inquiries, setInquiries] = React.useState<Inquiry[]>([])
+  const [tasks, setTasks] = React.useState<StudioTask[]>([])
+  const [shareUrl, setShareUrl] = React.useState('')
   const [isLoading, setIsLoading] = React.useState(true)
   const [isNewClientModalOpen, setIsNewClientModalOpen] = React.useState(false)
   const [selectedPortalClient, setSelectedPortalClient] = React.useState<Client | null>(null)
@@ -49,7 +56,7 @@ export default function StudioPage() {
       setIsLoading(true)
       try {
         CrmService.ensureLocalSeed()
-        const [loadedClients, loadedProjects, loadedDeliverables, loadedComms, loadedInvoices, loadedInquiries] =
+        const [loadedClients, loadedProjects, loadedDeliverables, loadedComms, loadedInvoices, loadedInquiries, loadedTasks] =
           await Promise.all([
             CrmService.getClients(),
             CrmService.getProjects(),
@@ -57,13 +64,26 @@ export default function StudioPage() {
             CrmService.getCommunications(),
             CrmService.getInvoices(),
             CrmService.getInquiries(),
+            CrmService.getTasks(),
           ])
+        const missingProjects = loadedClients.filter(
+          (client) => !loadedProjects.some((project) => project.client_id === client.id)
+        )
+        const createdProjects: Project[] = []
+        for (const client of missingProjects) {
+          try {
+            createdProjects.push(await CrmService.ensureProject(client))
+          } catch (err) {
+            console.error('Could not open a project for', client.name, err)
+          }
+        }
         setClients(loadedClients)
-        setProjects(loadedProjects)
+        setProjects([...createdProjects, ...loadedProjects])
         setDeliverables(loadedDeliverables)
         setCommunications(loadedComms)
         setInvoices(loadedInvoices)
         setInquiries(loadedInquiries)
+        setTasks(loadedTasks)
         if (loadedClients.length > 0) setSelectedPortalClient(loadedClients[0])
       } catch (err) {
         console.error('Failed to load CRM data', err)
@@ -105,7 +125,18 @@ export default function StudioPage() {
 
   const handleUpdateDeliverableStatus = async (id: string, status: ApprovalStatus, feedback?: string) => {
     const updated = await CrmService.updateDeliverableStatus(id, status, feedback)
-    if (updated) setDeliverables((prev) => prev.map((item) => (item.id === id ? updated : item)))
+    if (!updated) return
+    setDeliverables((prev) => prev.map((item) => (item.id === id ? updated : item)))
+    const project = projects.find((item) => item.id === updated.project_id)
+    const client = clients.find((item) => item.id === project?.client_id)
+    if (!client) return
+    const log = await CrmService.logActivity(
+      client.id,
+      client.name,
+      revisionMessage(updated.id, updated.version, status, updated.sheet_number, feedback || ''),
+      'approval_request'
+    )
+    setCommunications((prev) => [log, ...prev])
   }
 
   const handleAddDeliverable = async (del: Omit<ProjectDeliverable, 'id' | 'updated_at'>) => {
@@ -118,9 +149,11 @@ export default function StudioPage() {
     clientName: string,
     phone: string,
     message: string,
-    triggerType: CommunicationLog['trigger_type']
+    triggerType: CommunicationLog['trigger_type'],
+    status: CommunicationLog['status'] = 'sent',
+    channel: CommunicationLog['channel'] = 'whatsapp'
   ) => {
-    const newLog = await CrmService.sendWhatsAppNotification(clientId, clientName, phone, message, triggerType)
+    const newLog = await CrmService.sendWhatsAppNotification(clientId, clientName, phone, message, triggerType, status, channel)
     setCommunications((prev) => [newLog, ...prev])
   }
 
@@ -200,11 +233,158 @@ export default function StudioPage() {
     setCommunications((prev) => [log, ...prev])
   }
 
+  const tomorrow = () => {
+    const date = new Date()
+    date.setDate(date.getDate() + 1)
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${date.getFullYear()}-${month}-${day}`
+  }
+
+  const handleAddTask = async (title: string, clientId?: string, clientName?: string, dueDate?: string) => {
+    const task = await CrmService.addTask({
+      title,
+      client_id: clientId,
+      client_name: clientName,
+      due_date: dueDate || tomorrow(),
+    })
+    setTasks((prev) => [task, ...prev])
+    return task
+  }
+
+  const handleCompleteTask = async (id: string) => {
+    const updated = await CrmService.updateTask(id, { status: 'Done' })
+    if (updated) setTasks((prev) => prev.map((task) => (task.id === id ? updated : task)))
+  }
+
+  const handleSheetComment = async (deliverableId: string, body: string) => {
+    const sheet = deliverables.find((item) => item.id === deliverableId)
+    const project = projects.find((item) => item.id === sheet?.project_id)
+    const client = clients.find((item) => item.id === project?.client_id) || selectedPortalClient
+    if (!sheet || !client) return
+    const log = await CrmService.logActivity(client.id, client.name, commentMessage(sheet.id, sheet.sheet_number, body), 'manual')
+    setCommunications((prev) => [log, ...prev])
+  }
+
+  const handleApproveAction = async (proposal: ActionProposal) => {
+    const action = proposal.action
+    if (action.kind === 'create_task') {
+      const task = await handleAddTask(action.title, action.clientId, action.clientName, action.dueDate)
+      return `Task saved: ${task.title}. Due ${task.due_date}.`
+    }
+    if (action.kind === 'prepare_invoice') {
+      await handleCreateInvoice({
+        project_id: action.projectId,
+        client_id: action.clientId,
+        client_name: action.clientName,
+        description: action.description,
+        amount: action.amount,
+        status: 'Pending',
+        due_date: action.dueDate,
+      })
+      return `Invoice prepared for ${action.clientName} and left as Pending.`
+    }
+    if (action.kind === 'move_stage') {
+      await handleStageChange(action.clientId, action.stage)
+      return `${action.clientName} is now in ${action.stage}.`
+    }
+    if (action.kind === 'create_client') {
+      await handleAddClient({
+        name: action.name,
+        email: action.email,
+        phone: action.phone || 'To be confirmed',
+        address: 'To be confirmed',
+        city: '',
+        property_type: 'Luxury Villa',
+        style_preference: 'Warm Minimalist',
+        budget: 0,
+        square_footage: 0,
+        stage: 'Lead Inbound',
+        lead_source: 'Website',
+      })
+      return `${action.name} was added in Lead Inbound.`
+    }
+    if (action.kind === 'draft_update') {
+      for (const recipient of action.recipients) {
+        const consent = readConsent(recipient.clientId)
+        let status: CommunicationLog['status'] = 'logged'
+        let channel: CommunicationLog['channel'] = 'system'
+        let recipientAddress = 'studio'
+        if (recipient.canSend) {
+          const useEmail = consent.email
+          const res = await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              channel: useEmail ? 'email' : 'whatsapp',
+              email: recipient.email,
+              phone: recipient.phone,
+              clientName: recipient.clientName,
+              message: action.message,
+              consentEmail: consent.email,
+              consentWhatsapp: consent.whatsapp,
+              recentMessages: communications
+                .filter((log) => log.client_id === recipient.clientId)
+                .map((log) => ({ message: log.message, sentAt: log.sent_at })),
+            }),
+          })
+          const data = await res.json()
+          status = data.status === 'delivered' ? 'delivered' : data.status === 'failed' ? 'failed' : 'logged'
+          channel = useEmail ? 'email' : 'whatsapp'
+          recipientAddress = useEmail ? recipient.email : recipient.phone
+        }
+        const log = await CrmService.sendWhatsAppNotification(
+          recipient.clientId,
+          recipient.clientName,
+          recipientAddress,
+          `Hello ${recipient.clientName}, a drawing is waiting for your review. Open your project link, then approve it or tell us what to change.`,
+          'approval_request',
+          status,
+          channel
+        )
+        setCommunications((prev) => [log, ...prev])
+      }
+      return 'The update was approved. Clients with consent are sent when email or WhatsApp is configured. The others were logged only.'
+    }
+    return action.kind === 'delayed_projects'
+      ? action.lines.join('\n') || 'No projects are past their target.'
+      : 'Nothing was changed.'
+  }
+
   const openPortal = (client: Client) => {
     setSelectedPortalClient(client)
     setRecordClientId(null)
     setActiveTab('portal')
   }
+
+  const openInsight = (item: TodayItem) => {
+    const client = item.clientId ? clients.find((row) => row.id === item.clientId) : undefined
+    if (item.section === 'portal' && client) {
+      openPortal(client)
+      return
+    }
+    if (item.section === 'pipeline' && item.clientId) setRecordClientId(item.clientId)
+    setActiveTab(item.section === 'analysis' ? 'analysis' : item.section)
+  }
+
+  React.useEffect(() => {
+    if (!selectedPortalClient) {
+      setShareUrl('')
+      return
+    }
+    let cancelled = false
+    void fetch(`/api/portal-link?clientId=${selectedPortalClient.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setShareUrl(data.url || '')
+      })
+      .catch(() => {
+        if (!cancelled) setShareUrl('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPortalClient])
 
   const activePortalProject = React.useMemo(() => {
     return (
@@ -245,10 +425,15 @@ export default function StudioPage() {
           {activeTab === 'analysis' && (
             <AnalysisDashboard
               clients={clients}
+              projects={projects}
               inquiries={inquiries}
               invoices={invoices}
               deliverables={deliverables}
+              tasks={tasks}
               onOpenSection={setActiveTab}
+              onOpenInsight={openInsight}
+              onCompleteTask={(id) => void handleCompleteTask(id)}
+              onAddTask={(title) => void handleAddTask(title)}
             />
           )}
           {activeTab === 'inquiries' && (
@@ -288,10 +473,15 @@ export default function StudioPage() {
               invoices={invoices}
               inquiries={inquiries}
               logs={communications}
+              onApproveAction={handleApproveAction}
             />
           )}
           {activeTab === 'whatsapp' && (
-            <WhatsAppHub logs={communications.filter((log) => log.channel === 'whatsapp')} clients={clients} onSendNotification={handleSendWhatsApp} />
+            <WhatsAppHub
+              logs={communications.filter((log) => log.channel === 'whatsapp' || log.channel === 'email')}
+              clients={clients}
+              onSendNotification={handleSendWhatsApp}
+            />
           )}
           {activeTab === 'invoices' && (
             <InvoicesTracker
@@ -308,8 +498,12 @@ export default function StudioPage() {
                 client={selectedPortalClient}
                 project={activePortalProject}
                 deliverables={activePortalDeliverables}
+                shareUrl={shareUrl}
+                comments={activePortalDeliverables.flatMap((item) => commentsFor(communications, item.id))}
+                revisions={activePortalDeliverables.flatMap((item) => revisionsFor(communications, item.id))}
                 onApproveDeliverable={(id, feedback) => handleUpdateDeliverableStatus(id, 'Approved', feedback)}
                 onRequestChanges={(id, feedback) => handleUpdateDeliverableStatus(id, 'Changes Requested', feedback)}
+                onAddComment={(id, body) => void handleSheetComment(id, body)}
                 onBackToDashboard={() => setActiveTab('pipeline')}
               />
             ) : (

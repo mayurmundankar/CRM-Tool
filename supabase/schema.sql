@@ -116,3 +116,20 @@ create policy "Allow all operations for anon/auth" on public.deliverables for al
 create policy "Allow all operations for anon/auth" on public.communication_logs for all using (true) with check (true);
 create policy "Allow all operations for anon/auth" on public.invoices for all using (true) with check (true);
 create policy "Allow all operations for anon/auth" on public.inquiries for all using (true) with check (true);
+
+-- 7. Studio follow-up tasks
+create table if not exists public.studio_tasks (
+  id uuid primary key default uuid_generate_v4(),
+  title text not null,
+  client_id uuid references public.clients(id) on delete set null,
+  client_name text,
+  due_date date not null,
+  status text not null default 'Open',
+  created_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+alter table public.studio_tasks enable row level security;
+drop policy if exists "Allow all operations for anon/auth" on public.studio_tasks;
+create policy "Allow all operations for anon/auth" on public.studio_tasks for all using (true) with check (true);
+
+alter table public.projects add column if not exists deliverables_count integer not null default 0;
