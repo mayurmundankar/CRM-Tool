@@ -61,7 +61,7 @@ export function exportSpecToPdf(data: SpecPdfData) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Atelier BIM - ${escapeHtml(data.roomType)} Specification</title>
+  <title>FlowMS - ${escapeHtml(data.roomType)} Specification</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
@@ -296,7 +296,7 @@ export function exportSpecToPdf(data: SpecPdfData) {
 
   <div class="studio-header">
     <div>
-      <h1 class="brand-title">ATELIER BIM STUDIO</h1>
+      <h1 class="brand-title">FLOWMS</h1>
       <div class="brand-subtitle">Interior Architecture & Revit Automation Specification Sheet</div>
     </div>
     <div class="doc-meta">
@@ -342,7 +342,7 @@ export function exportSpecToPdf(data: SpecPdfData) {
   <div class="signoff-section">
     <div class="signoff-box">
       <div class="grid-cell-label">AI BIM Automation Engineer</div>
-      <div>Generated via Atelier BIM Studio</div>
+      <div>Generated via FlowMS</div>
       <div class="signoff-line"></div>
       <div>Signature & Timestamp</div>
     </div>
@@ -361,7 +361,7 @@ export function exportSpecToPdf(data: SpecPdfData) {
   </div>
 
   <div class="footer-stamp">
-    Atelier BIM Studio • Official Architectural Deliverable • Confidential & Proprietary
+    FlowMS • Official Architectural Deliverable • Confidential & Proprietary
   </div>
 
   <script>

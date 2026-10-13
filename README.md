@@ -1,4 +1,4 @@
-# Atelier BIM • Interior Design & Revit Automation CRM
+# FlowMS • Interior Design & Revit Automation CRM
 
 A modern CRM and Client Portal tailored for interior design and architecture studios specializing in AI-driven Autodesk Revit documentation workflows (lighting plans, plumbing plans, elevations, and 3D deliverables).
 

@@ -23,6 +23,10 @@ Always format clearly with bullet points, precise dimensions, and technical rigo
 Write warm, concise, professional WhatsApp messages to luxury residential and commercial clients regarding their design progress, Revit sheet approvals, and milestone updates. Keep messages elegant, engaging, and under 90 words.`
     }
 
+    if (task === 'chat') {
+      defaultSystem = `You are Studio Chat inside FlowMS. Answer from the studio records included in the conversation. If a fact is not in those records, say you do not have it. Do not invent project details. Do not use markdown. Open with the name, then one "Label: value" line per fact.`
+    }
+
     // 1. If an OpenAI API Key is present and user requested gpt-4o-mini or gpt-*:
     const openAiKey = process.env.OPENAI_API_KEY
     if (openAiKey && targetModel.startsWith('gpt-')) {
@@ -59,7 +63,7 @@ Write warm, concise, professional WhatsApp messages to luxury residential and co
     if (!keyToUse) {
       return NextResponse.json(
         {
-          error: 'GROQ_API_KEY is not configured. Please add GROQ_API_KEY to your .env.local or enter it in the AI Settings in the top bar.',
+          error: 'GROQ_API_KEY is not configured.',
           requiresKey: true,
         },
         { status: 400 }

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Atelier BIM • Interior Design & Revit Automation CRM",
-  description: "Next.js & Supabase CRM for luxury interior design studios. Features automated Revit lighting/plumbing sheet generation, Groq LLM integration, WhatsApp alerts, and client approval portal.",
+  title: "FlowMS • Interior Design CRM",
+  description: "FlowMS is a studio CRM for interior design teams. Pipeline, inquiries, Revit deliverables, client approvals, invoices, and a project-aware studio chat.",
 }
 
 export default function RootLayout({
@@ -24,7 +24,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-      <body className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-amber-500/20 selection:text-amber-500">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem('crm_theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}`,
+          }}
+        />
+      </head>
+      <body className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-foreground/10">
         {children}
       </body>
     </html>

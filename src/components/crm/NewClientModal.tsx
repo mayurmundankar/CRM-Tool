@@ -54,10 +54,7 @@ export function NewClientModal({ open, onOpenChange, onAddClient }: NewClientMod
     e.preventDefault()
     if (!formData.name || !formData.email) return
 
-    onAddClient({
-      ...formData,
-      avatar_url: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 5000)}?w=200&auto=format&fit=crop&q=80`
-    })
+    onAddClient(formData)
 
     onOpenChange(false)
     setFormData({
@@ -86,7 +83,7 @@ export function NewClientModal({ open, onOpenChange, onAddClient }: NewClientMod
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <DialogTitle className="text-xl font-serif">Onboard New Interior Design Client</DialogTitle>
+              <DialogTitle className="text-xl">Onboard a client</DialogTitle>
               <DialogDescription>
                 Register client details, property specifications, design aesthetic, and project budget.
               </DialogDescription>
@@ -239,7 +236,7 @@ export function NewClientModal({ open, onOpenChange, onAddClient }: NewClientMod
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" className="bg-amber-500 hover:bg-amber-600 text-black font-semibold">
+            <Button type="submit">
               Save & Create Client Profile
             </Button>
           </DialogFooter>

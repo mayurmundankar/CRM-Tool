@@ -72,7 +72,21 @@ create table if not exists public.crm_communication_logs (
   status text default 'delivered'
 );
 
--- 5. Invoices Table
+-- 5. Inquiries Table
+create table if not exists public.crm_inquiries (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  email text not null,
+  phone text,
+  property_type text not null default 'Penthouse',
+  budget numeric not null default 0,
+  lead_source text default 'Website',
+  message text,
+  status text not null default 'New',
+  created_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+-- 6. Invoices Table
 create table if not exists public.crm_invoices (
   id uuid primary key default uuid_generate_v4(),
   project_id uuid references public.crm_projects(id) on delete cascade,
@@ -92,9 +106,11 @@ alter table public.crm_projects enable row level security;
 alter table public.crm_deliverables enable row level security;
 alter table public.crm_communication_logs enable row level security;
 alter table public.crm_invoices enable row level security;
+alter table public.crm_inquiries enable row level security;
 
 create policy "Allow all operations" on public.crm_clients for all using (true) with check (true);
 create policy "Allow all operations" on public.crm_projects for all using (true) with check (true);
 create policy "Allow all operations" on public.crm_deliverables for all using (true) with check (true);
 create policy "Allow all operations" on public.crm_communication_logs for all using (true) with check (true);
 create policy "Allow all operations" on public.crm_invoices for all using (true) with check (true);
+create policy "Allow all operations" on public.crm_inquiries for all using (true) with check (true);

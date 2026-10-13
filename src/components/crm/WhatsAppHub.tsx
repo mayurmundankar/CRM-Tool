@@ -107,7 +107,7 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
           </Badge>
           <span className="text-xs text-muted-foreground">Automated Client Touchpoints & Transparency</span>
         </div>
-        <h2 className="text-2xl font-bold font-serif tracking-tight text-foreground mt-1">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground mt-1">
           WhatsApp & Client Notification Center
         </h2>
         <p className="text-sm text-muted-foreground">
@@ -116,11 +116,10 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
       </div>
 
       {clients.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-border/80 rounded-2xl bg-card">
-          <MessageCircle className="h-10 w-10 text-muted-foreground mb-3" />
-          <h3 className="text-base font-semibold">No clients registered yet</h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-            Onboard a client using the &quot;Add Client&quot; button to dispatch real-time WhatsApp updates.
+        <div className="py-12">
+          <h3 className="text-base font-medium">No clients yet</h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Add a client to draft a WhatsApp update and keep it on their record.
           </p>
         </div>
       ) : (
@@ -242,10 +241,10 @@ export function WhatsAppHub({ logs, clients, onSendNotification }: WhatsAppHubPr
             {/* Chat header */}
             <div className="flex items-center gap-2.5 rounded-t-2xl bg-[#075E54] p-3 text-white">
               <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs">
-                AB
+                FM
               </div>
               <div className="flex-1 overflow-hidden">
-                <div className="text-xs font-bold truncate">ATELIER BIM Studio</div>
+                <div className="text-xs font-bold truncate">FlowMS</div>
                 <div className="text-[10px] text-emerald-200">Official Client Portal Bot</div>
               </div>
             </div>

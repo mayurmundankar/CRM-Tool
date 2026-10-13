@@ -1,13 +1,30 @@
-import { Client, Project, ProjectDeliverable, CommunicationLog, Invoice, PipelineStage } from '@/types/crm'
+import {
+  Client,
+  CommunicationLog,
+  Inquiry,
+  InquiryStatus,
+  Invoice,
+  PipelineStage,
+  Project,
+  ProjectDeliverable,
+} from '@/types/crm'
 import { supabase, isSupabaseConfigured } from './supabase'
+import {
+  SEED_CLIENTS,
+  SEED_COMMUNICATIONS,
+  SEED_DELIVERABLES,
+  SEED_INQUIRIES,
+  SEED_INVOICES,
+  SEED_PROJECTS,
+} from './mock-data'
 
 const STORAGE_KEY_CLIENTS = 'crm_interior_clients'
 const STORAGE_KEY_PROJECTS = 'crm_interior_projects'
 const STORAGE_KEY_DELIVERABLES = 'crm_interior_deliverables'
 const STORAGE_KEY_COMMUNICATIONS = 'crm_interior_communications'
 const STORAGE_KEY_INVOICES = 'crm_interior_invoices'
+const STORAGE_KEY_INQUIRIES = 'crm_interior_inquiries'
 
-// Helper to generate RFC4122 UUID
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
@@ -19,7 +36,6 @@ function generateUUID(): string {
   })
 }
 
-// Helper to get from LocalStorage
 function getFromStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
   try {
@@ -40,8 +56,58 @@ function saveToStorage<T>(key: string, data: T) {
   }
 }
 
+function buildProject(client: Client, now = new Date().toISOString()): Project {
+  return {
+    id: generateUUID(),
+    client_id: client.id,
+    client_name: client.name,
+    name: `${client.name} • ${client.property_type}`,
+    property_type: client.property_type,
+    stage: client.stage,
+    progress_pct: 10,
+    target_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    total_budget: client.budget,
+    spent_budget: 0,
+    revit_version: 'Revit 2026.1 (LOD 350)',
+    deliverables_count: 0,
+    created_at: now,
+  }
+}
+
+async function persistProject(project: Project) {
+  if (isSupabaseConfigured && supabase) {
+    const { error } = await supabase.from('projects').insert([project])
+    if (!error) return
+    console.error('Supabase persistProject error:', error)
+  }
+  const current = getFromStorage<Project[]>(STORAGE_KEY_PROJECTS, [])
+  saveToStorage(STORAGE_KEY_PROJECTS, [project, ...current])
+}
+
+async function persistLog(log: CommunicationLog): Promise<CommunicationLog> {
+  if (isSupabaseConfigured && supabase) {
+    const { data, error } = await supabase.from('communication_logs').insert([log]).select().single()
+    if (!error && data) return data as CommunicationLog
+    if (error) console.error('Supabase persistLog error:', error)
+  }
+  const current = getFromStorage<CommunicationLog[]>(STORAGE_KEY_COMMUNICATIONS, [])
+  saveToStorage(STORAGE_KEY_COMMUNICATIONS, [log, ...current])
+  return log
+}
+
 export const CrmService = {
-  // Clear any old dummy data in browser localStorage
+  ensureLocalSeed() {
+    if (typeof window === 'undefined') return
+    if (isSupabaseConfigured) return
+    if (localStorage.getItem(STORAGE_KEY_CLIENTS) !== null) return
+    saveToStorage(STORAGE_KEY_CLIENTS, SEED_CLIENTS)
+    saveToStorage(STORAGE_KEY_PROJECTS, SEED_PROJECTS)
+    saveToStorage(STORAGE_KEY_DELIVERABLES, SEED_DELIVERABLES)
+    saveToStorage(STORAGE_KEY_COMMUNICATIONS, SEED_COMMUNICATIONS)
+    saveToStorage(STORAGE_KEY_INVOICES, SEED_INVOICES)
+    saveToStorage(STORAGE_KEY_INQUIRIES, SEED_INQUIRIES)
+  },
+
   clearLocalStorage() {
     if (typeof window === 'undefined') return
     localStorage.removeItem(STORAGE_KEY_CLIENTS)
@@ -49,69 +115,40 @@ export const CrmService = {
     localStorage.removeItem(STORAGE_KEY_DELIVERABLES)
     localStorage.removeItem(STORAGE_KEY_COMMUNICATIONS)
     localStorage.removeItem(STORAGE_KEY_INVOICES)
+    localStorage.removeItem(STORAGE_KEY_INQUIRIES)
   },
 
-  // --- CLIENTS ---
   async getClients(): Promise<Client[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-      if (!error && data) {
-        return data as Client[]
-      }
-      if (error) {
-        console.error('Supabase getClients error:', error)
-      }
+      if (!error && data) return data as Client[]
+      if (error) console.error('Supabase getClients error:', error)
     }
     return getFromStorage<Client[]>(STORAGE_KEY_CLIENTS, [])
   },
 
   async addClient(clientData: Omit<Client, 'id' | 'created_at' | 'updated_at'>): Promise<Client> {
-    const newId = generateUUID()
     const now = new Date().toISOString()
     const newClient: Client = {
       ...clientData,
-      id: newId,
+      id: generateUUID(),
       created_at: now,
       updated_at: now,
     }
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('clients')
-        .insert([newClient])
-        .select()
-        .single()
-
+      const { data, error } = await supabase.from('clients').insert([newClient]).select().single()
       if (!error && data) {
-        // Also create a default linked project in Supabase for this client
-        const newProject: Project = {
-          id: generateUUID(),
-          client_id: data.id,
-          client_name: data.name,
-          name: `${data.name} • ${data.property_type} Design`,
-          property_type: data.property_type,
-          stage: data.stage,
-          progress_pct: 10,
-          target_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          total_budget: data.budget,
-          spent_budget: 0,
-          revit_version: 'Revit 2026.1 (LOD 350)',
-          deliverables_count: 0,
-          created_at: now,
-        }
-        await supabase.from('projects').insert([newProject])
-
-        return data as Client
+        const saved = data as Client
+        await persistProject(buildProject(saved, now))
+        return saved
       }
-
-      if (error) {
-        console.error('Supabase addClient error:', error)
-      }
+      if (error) console.error('Supabase addClient error:', error)
     }
 
     const current = getFromStorage<Client[]>(STORAGE_KEY_CLIENTS, [])
-    const updated = [newClient, ...current]
-    saveToStorage(STORAGE_KEY_CLIENTS, updated)
+    saveToStorage(STORAGE_KEY_CLIENTS, [newClient, ...current])
+    await persistProject(buildProject(newClient, now))
     return newClient
   },
 
@@ -134,7 +171,7 @@ export const CrmService = {
     const updatedClient = {
       ...current[index],
       ...updates,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     }
     current[index] = updatedClient
     saveToStorage(STORAGE_KEY_CLIENTS, current)
@@ -142,10 +179,23 @@ export const CrmService = {
   },
 
   async updateClientStage(id: string, newStage: PipelineStage): Promise<Client | null> {
-    return this.updateClient(id, { stage: newStage })
+    const client = await this.updateClient(id, { stage: newStage })
+    if (!client) return null
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('projects').update({ stage: newStage }).eq('client_id', id)
+      if (!error) return client
+      console.error('Supabase update project stage error:', error)
+    }
+
+    const projects = getFromStorage<Project[]>(STORAGE_KEY_PROJECTS, [])
+    saveToStorage(
+      STORAGE_KEY_PROJECTS,
+      projects.map(project => (project.client_id === id ? { ...project, stage: newStage } : project))
+    )
+    return client
   },
 
-  // --- PROJECTS ---
   async getProjects(): Promise<Project[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
@@ -155,7 +205,15 @@ export const CrmService = {
     return getFromStorage<Project[]>(STORAGE_KEY_PROJECTS, [])
   },
 
-  // --- DELIVERABLES ---
+  async ensureProject(client: Client): Promise<Project> {
+    const projects = await this.getProjects()
+    const existing = projects.find(project => project.client_id === client.id)
+    if (existing) return existing
+    const project = buildProject(client)
+    await persistProject(project)
+    return project
+  },
+
   async getDeliverables(): Promise<ProjectDeliverable[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('deliverables').select('*').order('updated_at', { ascending: false })
@@ -176,7 +234,7 @@ export const CrmService = {
         .update({
           status,
           client_feedback: feedback || undefined,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('id', id)
         .select()
@@ -193,7 +251,7 @@ export const CrmService = {
       ...current[index],
       status,
       client_feedback: feedback ?? current[index].client_feedback,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     }
     current[index] = updated
     saveToStorage(STORAGE_KEY_DELIVERABLES, current)
@@ -204,7 +262,7 @@ export const CrmService = {
     const newDeliverable: ProjectDeliverable = {
       ...deliverable,
       id: generateUUID(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     }
 
     if (isSupabaseConfigured && supabase) {
@@ -214,12 +272,10 @@ export const CrmService = {
     }
 
     const current = getFromStorage<ProjectDeliverable[]>(STORAGE_KEY_DELIVERABLES, [])
-    const updated = [newDeliverable, ...current]
-    saveToStorage(STORAGE_KEY_DELIVERABLES, updated)
+    saveToStorage(STORAGE_KEY_DELIVERABLES, [newDeliverable, ...current])
     return newDeliverable
   },
 
-  // --- COMMUNICATIONS (WhatsApp & Notifications) ---
   async getCommunications(): Promise<CommunicationLog[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('communication_logs').select('*').order('sent_at', { ascending: false })
@@ -236,7 +292,7 @@ export const CrmService = {
     message: string,
     triggerType: CommunicationLog['trigger_type'] = 'manual'
   ): Promise<CommunicationLog> {
-    const newLog: CommunicationLog = {
+    return persistLog({
       id: generateUUID(),
       client_id: clientId,
       client_name: clientName,
@@ -246,21 +302,28 @@ export const CrmService = {
       message,
       sent_at: new Date().toISOString(),
       status: 'sent',
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.from('communication_logs').insert([newLog]).select().single()
-      if (!error && data) return data as CommunicationLog
-      if (error) console.error('Supabase sendWhatsAppNotification error:', error)
-    }
-
-    const current = getFromStorage<CommunicationLog[]>(STORAGE_KEY_COMMUNICATIONS, [])
-    const updated = [newLog, ...current]
-    saveToStorage(STORAGE_KEY_COMMUNICATIONS, updated)
-    return newLog
+    })
   },
 
-  // --- INVOICES ---
+  async logActivity(
+    clientId: string,
+    clientName: string,
+    message: string,
+    triggerType: CommunicationLog['trigger_type'] = 'manual'
+  ): Promise<CommunicationLog> {
+    return persistLog({
+      id: generateUUID(),
+      client_id: clientId,
+      client_name: clientName,
+      channel: 'system',
+      recipient_phone_or_email: 'studio',
+      trigger_type: triggerType,
+      message,
+      sent_at: new Date().toISOString(),
+      status: 'delivered',
+    })
+  },
+
   async getInvoices(): Promise<Invoice[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('invoices').select('*').order('due_date', { ascending: true })
@@ -270,8 +333,86 @@ export const CrmService = {
     return getFromStorage<Invoice[]>(STORAGE_KEY_INVOICES, [])
   },
 
-  // Reset/Empty everything
+  async addInvoice(input: Omit<Invoice, 'id' | 'invoice_number' | 'issue_date'> & { invoice_number?: string }): Promise<Invoice> {
+    const invoice: Invoice = {
+      ...input,
+      id: generateUUID(),
+      invoice_number: input.invoice_number || `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      issue_date: new Date().toISOString().split('T')[0],
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('invoices').insert([invoice]).select().single()
+      if (!error && data) return data as Invoice
+      if (error) console.error('Supabase addInvoice error:', error)
+    }
+
+    const current = getFromStorage<Invoice[]>(STORAGE_KEY_INVOICES, [])
+    saveToStorage(STORAGE_KEY_INVOICES, [invoice, ...current])
+    return invoice
+  },
+
+  async updateInvoiceStatus(id: string, status: Invoice['status']): Promise<Invoice | null> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('invoices').update({ status }).eq('id', id).select().single()
+      if (!error && data) return data as Invoice
+      if (error) console.error('Supabase updateInvoiceStatus error:', error)
+    }
+
+    const current = getFromStorage<Invoice[]>(STORAGE_KEY_INVOICES, [])
+    const index = current.findIndex(invoice => invoice.id === id)
+    if (index === -1) return null
+    const updated = { ...current[index], status }
+    current[index] = updated
+    saveToStorage(STORAGE_KEY_INVOICES, current)
+    return updated
+  },
+
+  async getInquiries(): Promise<Inquiry[]> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('inquiries').select('*').order('created_at', { ascending: false })
+      if (!error && data) return data as Inquiry[]
+      if (error) console.error('Supabase getInquiries error:', error)
+    }
+    return getFromStorage<Inquiry[]>(STORAGE_KEY_INQUIRIES, [])
+  },
+
+  async addInquiry(input: Omit<Inquiry, 'id' | 'created_at' | 'status'> & { status?: InquiryStatus }): Promise<Inquiry> {
+    const inquiry: Inquiry = {
+      ...input,
+      id: generateUUID(),
+      status: input.status || 'New',
+      created_at: new Date().toISOString(),
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('inquiries').insert([inquiry]).select().single()
+      if (!error && data) return data as Inquiry
+      if (error) console.error('Supabase addInquiry error:', error)
+    }
+
+    const current = getFromStorage<Inquiry[]>(STORAGE_KEY_INQUIRIES, [])
+    saveToStorage(STORAGE_KEY_INQUIRIES, [inquiry, ...current])
+    return inquiry
+  },
+
+  async updateInquiry(id: string, updates: Partial<Inquiry>): Promise<Inquiry | null> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('inquiries').update(updates).eq('id', id).select().single()
+      if (!error && data) return data as Inquiry
+      if (error) console.error('Supabase updateInquiry error:', error)
+    }
+
+    const current = getFromStorage<Inquiry[]>(STORAGE_KEY_INQUIRIES, [])
+    const index = current.findIndex(inquiry => inquiry.id === id)
+    if (index === -1) return null
+    const updated = { ...current[index], ...updates }
+    current[index] = updated
+    saveToStorage(STORAGE_KEY_INQUIRIES, current)
+    return updated
+  },
+
   resetToDefaults() {
     this.clearLocalStorage()
-  }
+  },
 }
