@@ -128,41 +128,18 @@ export function DeliverablesTracker({
   return (
     <div className="space-y-6">
       {/* Top Banner: Automation Metrics & CTA */}
-      <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-50/90 via-stone-50 to-amber-100/50 dark:from-neutral-900 dark:via-neutral-900 dark:to-amber-950/40 p-6 shadow-xs">
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <Badge variant="gold" className="gap-1 font-semibold text-xs">
-                <Zap className="h-3.5 w-3.5 fill-amber-500 text-amber-500" /> Revit BIM Automation Engine
-              </Badge>
-              <span className="text-xs text-muted-foreground">JD Objective Alignment: 2-3h reduced to minutes</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground dark:text-white font-serif">
-              Architectural & Interior Design Deliverables
-            </h2>
-            <p className="text-sm text-muted-foreground dark:text-neutral-300 max-w-2xl">
-              Track automated lighting plans, plumbing plans, elevations, and client sign-offs.
-              Empowers your U.S. clients with instant sheet reviews and automated Revit turnaround.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-            <div className="rounded-xl border border-border/80 bg-background/90 dark:border-white/10 dark:bg-white/5 p-3 text-center sm:text-left">
-              <div className="text-[11px] text-muted-foreground dark:text-neutral-400">Total Time Saved</div>
-              <div className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                {(totalTimeSavedMin / 60).toFixed(1)} hrs <span className="text-xs text-muted-foreground dark:text-neutral-400 font-normal">({totalTimeSavedMin} min)</span>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => setIsGenerateModalOpen(true)}
-              className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold shadow-xs shadow-amber-500/20 text-xs"
-            >
-              <Sparkles className="h-4 w-4 stroke-[2.5]" />
-              <span>Generate Automated Plan</span>
-            </Button>
-          </div>
+      <div className="flex flex-col gap-4 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Sheets</p>
+          <h2 className="mt-1 text-xl font-medium tracking-tight">Deliverables</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Lighting, plumbing, elevations, and schedules. {(totalTimeSavedMin / 60).toFixed(1)} hours saved on the sheets already in the studio.
+          </p>
         </div>
+        <Button type="button" size="sm" onClick={() => setIsGenerateModalOpen(true)} className="gap-2">
+          <Sparkles className="h-3.5 w-3.5" />
+          Generate sheet
+        </Button>
       </div>
 
       {/* Filter and Stats Bar */}
@@ -195,15 +172,14 @@ export function DeliverablesTracker({
 
       {/* Deliverables Grid */}
       {filteredDeliverables.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-border/80 rounded-2xl bg-card">
-          <FileText className="h-10 w-10 text-muted-foreground mb-3" />
-          <h3 className="text-base font-semibold">No deliverables yet</h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-            Generate an automated Revit lighting or plumbing plan sheet, or add a new deliverable.
+        <div className="py-12">
+          <h3 className="text-base font-medium">No deliverables yet</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+            Generate a lighting or plumbing sheet, or add one by hand.
           </p>
           <Button
             onClick={() => setIsGenerateModalOpen(true)}
-            className="mt-4 gap-2 bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs"
+            className="mt-4 gap-2 text-xs"
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span>Generate Automated Plan</span>
@@ -215,7 +191,7 @@ export function DeliverablesTracker({
             const project = projects.find(p => p.id === item.project_id)
 
           return (
-            <Card key={item.id} className="overflow-hidden border-border/80 hover:border-amber-500/40 transition-all flex flex-col group">
+            <Card key={item.id} className="overflow-hidden border-border hover:border-foreground/20 flex flex-col group">
               {/* Preview Thumbnail */}
               <div className="relative h-48 w-full overflow-hidden bg-neutral-950">
                 <img
@@ -233,7 +209,7 @@ export function DeliverablesTracker({
                   </Badge>
 
                   {item.ai_automated && (
-                    <Badge variant="gold" className="bg-amber-500/90 text-black font-semibold text-[10px] gap-1">
+                    <Badge variant="secondary" className="text-[10px] gap-1">
                       <Zap className="h-3 w-3 fill-black" />
                       AI Automated ({item.time_saved_min}m saved)
                     </Badge>
@@ -312,7 +288,7 @@ export function DeliverablesTracker({
                 <Sparkles className="h-4 w-4" />
               </div>
               <div>
-                <DialogTitle className="font-serif text-lg">AI Revit Documentation Engine</DialogTitle>
+                <DialogTitle className="text-lg">AI Revit Documentation Engine</DialogTitle>
                 <DialogDescription>
                   Automate lighting plans, plumbing diagrams, and millwork elevations in minutes.
                 </DialogDescription>
@@ -401,7 +377,7 @@ export function DeliverablesTracker({
 
               <DialogFooter className="pt-2">
                 <Button variant="outline" onClick={() => setIsGenerateModalOpen(false)}>Cancel</Button>
-                <Button onClick={handleStartAiGeneration} className="bg-amber-500 hover:bg-amber-600 text-black font-semibold">
+                <Button onClick={handleStartAiGeneration}>
                   Execute AI Automation
                 </Button>
               </DialogFooter>
@@ -414,7 +390,7 @@ export function DeliverablesTracker({
       <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-serif">Deliverable Review & Approval</DialogTitle>
+            <DialogTitle>Deliverable review</DialogTitle>
             <DialogDescription>
               {activeDeliverable?.title} ({activeDeliverable?.sheet_number})
             </DialogDescription>

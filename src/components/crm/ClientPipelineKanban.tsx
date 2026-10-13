@@ -1,26 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { Client, PipelineStage, PropertyType } from "@/types/crm"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Client, PipelineStage } from "@/types/crm"
+import { BUDGET_BANDS, DESIGN_STYLES, LEAD_SOURCES, PIPELINE_STAGES, PROPERTY_TYPES, matchesBudget } from "@/lib/studio"
+import { formatCurrency } from "@/lib/format"
+import { FilterSelect, SearchField } from "@/components/crm/filters"
+import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
-  Search,
-  Filter,
-  ArrowRight,
   MessageCircle,
-  Building2,
   DollarSign,
   Ruler,
   MapPin,
   ExternalLink,
   ChevronRight,
   ChevronLeft,
-  Clock,
-  Sparkles,
   LayoutGrid,
   List
 } from "lucide-react"
@@ -28,52 +24,47 @@ import {
 interface ClientPipelineKanbanProps {
   clients: Client[]
   onStageChange: (clientId: string, stage: PipelineStage) => void
+  onOpenClient: (client: Client) => void
   onSelectClientForPortal: (client: Client) => void
   onSendWhatsAppQuick: (client: Client) => void
 }
 
-const STAGES: { id: PipelineStage; label: string; color: string; desc: string }[] = [
-  { id: 'Lead Inbound', label: 'Inbound Leads', color: 'border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40', desc: 'Initial inquiry & intake' },
-  { id: 'Consultation & Discovery', label: 'Consultation', color: 'border-blue-200 bg-blue-50/70 dark:border-blue-900/40 dark:bg-blue-950/20', desc: 'Site visit & brief' },
-  { id: 'Concept & Moodboard', label: 'Concept & Moodboard', color: 'border-purple-200 bg-purple-50/70 dark:border-purple-900/40 dark:bg-purple-950/20', desc: 'Aesthetic direction' },
-  { id: 'Schematic Planning', label: 'Schematic Planning', color: 'border-indigo-200 bg-indigo-50/70 dark:border-indigo-900/40 dark:bg-indigo-950/20', desc: 'Space & partition plans' },
-  { id: 'Revit BIM & Tech Drawings', label: 'Revit BIM & Drawings', color: 'border-amber-300/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/25', desc: 'Automated lighting & plumbing' },
-  { id: 'Procurement & Specs', label: 'Procurement', color: 'border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/40 dark:bg-cyan-950/20', desc: 'FF&E & material ordering' },
-  { id: 'Execution & Site Build', label: 'Site Execution', color: 'border-orange-200 bg-orange-50/70 dark:border-orange-900/40 dark:bg-orange-950/20', desc: 'Contractor millwork build' },
-  { id: 'Handover & Reveal', label: 'Handover & Reveal', color: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20', desc: 'Final styling & signoff' },
-]
-
 export function ClientPipelineKanban({
   clients,
   onStageChange,
+  onOpenClient,
   onSelectClientForPortal,
   onSendWhatsAppQuick,
 }: ClientPipelineKanbanProps) {
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [selectedPropertyFilter, setSelectedPropertyFilter] = React.useState<string>('ALL')
+  const [selectedPropertyFilter, setSelectedPropertyFilter] = React.useState('ALL')
+  const [selectedStyle, setSelectedStyle] = React.useState('ALL')
+  const [selectedSource, setSelectedSource] = React.useState('ALL')
+  const [selectedStage, setSelectedStage] = React.useState('ALL')
+  const [selectedBudget, setSelectedBudget] = React.useState('ALL')
   const [viewMode, setViewMode] = React.useState<'kanban' | 'list'>('kanban')
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
 
   const filteredClients = clients.filter((c) => {
+    const query = searchQuery.toLowerCase()
     const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.company && c.company.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      c.address.toLowerCase().includes(searchQuery.toLowerCase())
+      !query ||
+      c.name.toLowerCase().includes(query) ||
+      c.email.toLowerCase().includes(query) ||
+      (c.company && c.company.toLowerCase().includes(query)) ||
+      c.address.toLowerCase().includes(query)
 
-    const matchesProperty =
-      selectedPropertyFilter === 'ALL' || c.property_type === selectedPropertyFilter
-
-    return matchesSearch && matchesProperty
+    return (
+      matchesSearch &&
+      (selectedPropertyFilter === 'ALL' || c.property_type === selectedPropertyFilter) &&
+      (selectedStyle === 'ALL' || c.style_preference === selectedStyle) &&
+      (selectedSource === 'ALL' || c.lead_source === selectedSource) &&
+      (selectedStage === 'ALL' || c.stage === selectedStage) &&
+      matchesBudget(c.budget, selectedBudget)
+    )
   })
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(val)
-  }
+  const visibleStages = PIPELINE_STAGES.filter((stage) => selectedStage === 'ALL' || stage.id === selectedStage)
 
   const getStyleBadgeVariant = (style: string) => {
     switch (style) {
@@ -100,34 +91,34 @@ export function ClientPipelineKanban({
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] min-h-[500px] space-y-3">
       {/* Search, Filter & Quick Scroll Toolbar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 rounded-xl border border-border/70 bg-card p-2.5 shadow-xs shrink-0">
-        <div className="flex flex-1 items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search clients, addresses, companies..."
-              className="pl-8.5 bg-background h-8 text-xs"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
-              value={selectedPropertyFilter}
-              onChange={(e) => setSelectedPropertyFilter(e.target.value)}
-            >
-              <option value="ALL">All Properties</option>
-              <option value="Luxury Villa">Luxury Villa</option>
-              <option value="Penthouse">Penthouse</option>
-              <option value="Commercial Office">Commercial</option>
-              <option value="Boutique Retail">Boutique Retail</option>
-              <option value="Modern Apartment">Modern Apartment</option>
-              <option value="Hospitality & Lounge">Hospitality</option>
-            </select>
-          </div>
+      <div className="flex flex-col gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search clients" />
+          <FilterSelect
+            label="Stage"
+            value={selectedStage}
+            onChange={setSelectedStage}
+            options={[{ value: 'ALL', label: 'All stages' }, ...PIPELINE_STAGES.map((stage) => ({ value: stage.id, label: stage.label }))]}
+          />
+          <FilterSelect
+            label="Property"
+            value={selectedPropertyFilter}
+            onChange={setSelectedPropertyFilter}
+            options={[{ value: 'ALL', label: 'All properties' }, ...PROPERTY_TYPES.map((item) => ({ value: item, label: item }))]}
+          />
+          <FilterSelect
+            label="Style"
+            value={selectedStyle}
+            onChange={setSelectedStyle}
+            options={[{ value: 'ALL', label: 'All styles' }, ...DESIGN_STYLES.map((item) => ({ value: item, label: item }))]}
+          />
+          <FilterSelect
+            label="Source"
+            value={selectedSource}
+            onChange={setSelectedSource}
+            options={[{ value: 'ALL', label: 'All sources' }, ...LEAD_SOURCES.map((item) => ({ value: item, label: item }))]}
+          />
+          <FilterSelect label="Budget" value={selectedBudget} onChange={setSelectedBudget} options={BUDGET_BANDS} />
         </div>
 
         <div className="flex items-center gap-2 justify-end">
@@ -192,51 +183,46 @@ export function ClientPipelineKanban({
             scrollbarColor: 'hsl(var(--muted-foreground) / 0.4) transparent',
           }}
         >
-          {STAGES.map((stage) => {
+          {visibleStages.map((stage) => {
             const stageClients = filteredClients.filter((c) => c.stage === stage.id)
             const stageTotalValue = stageClients.reduce((acc, c) => acc + c.budget, 0)
 
             return (
               <div
                 key={stage.id}
-                className={`flex-shrink-0 w-80 rounded-xl border ${stage.color} p-3 flex flex-col h-full shadow-xs transition-colors`}
+                className="flex-shrink-0 w-72 rounded-lg border border-border bg-muted/40 p-3 flex flex-col h-full"
               >
-                {/* Stage Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-border/50 mb-2.5 shrink-0">
+                <div className="flex items-center justify-between pb-2 border-b border-border/70 mb-2.5 shrink-0">
                   <div>
-                    <h3 className="text-xs font-bold tracking-tight flex items-center gap-1.5 text-foreground">
+                    <h3 className="text-xs font-medium tracking-tight flex items-center gap-1.5 text-foreground">
                       {stage.label}
-                      <span className="rounded-full bg-background px-1.5 py-0.2 text-[10px] font-bold border border-border">
-                        {stageClients.length}
-                      </span>
+                      <span className="text-[10px] text-muted-foreground">{stageClients.length}</span>
                     </h3>
-                    <p className="text-[10px] text-muted-foreground">{stage.desc}</p>
+                    <p className="text-[10px] text-muted-foreground">{stage.description}</p>
                   </div>
-                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
                     {formatCurrency(stageTotalValue)}
                   </span>
                 </div>
 
-                {/* Cards Container (Scrolls vertically inside each stage column) */}
-                <div className="space-y-2.5 overflow-y-auto flex-1 pr-1">
+                <div className="space-y-2 overflow-y-auto flex-1 pr-1">
                   {stageClients.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-xs text-muted-foreground border border-dashed border-border/60 rounded-lg">
-                      <span>No active clients in this stage</span>
-                    </div>
+                    <p className="px-1 py-6 text-center text-xs text-muted-foreground">None in this stage</p>
                   ) : (
                     stageClients.map((client) => (
                       <Card
                         key={client.id}
-                        className="p-3 hover:shadow-md hover:border-amber-500/50 transition-all bg-card group relative"
+                        onClick={() => onOpenClient(client)}
+                        className="cursor-pointer p-3 hover:border-foreground/20 bg-card"
                       >
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-7 w-7 ring-1 ring-amber-500/30">
+                            <Avatar className="h-7 w-7">
                               <AvatarImage src={client.avatar_url} />
                               <AvatarFallback>{client.name.substring(0, 2)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <h4 className="text-xs font-semibold leading-tight group-hover:text-amber-500 transition-colors text-foreground">
+                              <h4 className="text-xs font-medium leading-tight text-foreground">
                                 {client.name}
                               </h4>
                               {client.company && (
@@ -273,7 +259,7 @@ export function ClientPipelineKanban({
 
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="flex items-center gap-1 text-[10px]">
-                              <Ruler className="h-3 w-3 text-amber-500" />
+                              <Ruler className="h-3 w-3" />
                               Scale:
                             </span>
                             <span>{client.square_footage.toLocaleString()} sq ft</span>
@@ -298,9 +284,10 @@ export function ClientPipelineKanban({
                           <select
                             className="h-6 text-[10px] rounded border border-border bg-background px-1 text-muted-foreground hover:text-foreground focus:outline-none"
                             value={client.stage}
+                            onClick={(event) => event.stopPropagation()}
                             onChange={(e) => onStageChange(client.id, e.target.value as PipelineStage)}
                           >
-                            {STAGES.map((s) => (
+                            {PIPELINE_STAGES.map((s) => (
                               <option key={s.id} value={s.id}>{s.label}</option>
                             ))}
                           </select>
@@ -311,7 +298,10 @@ export function ClientPipelineKanban({
                               size="icon"
                               className="h-6 w-6 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
                               title="Send WhatsApp update"
-                              onClick={() => onSendWhatsAppQuick(client)}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onSendWhatsAppQuick(client)
+                              }}
                             >
                               <MessageCircle className="h-3 w-3" />
                             </Button>
@@ -319,9 +309,12 @@ export function ClientPipelineKanban({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-amber-500 hover:bg-amber-500/10"
+                              className="h-6 w-6"
                               title="Open Client Project Portal"
-                              onClick={() => onSelectClientForPortal(client)}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onSelectClientForPortal(client)
+                              }}
                             >
                               <ExternalLink className="h-3 w-3" />
                             </Button>
@@ -354,7 +347,7 @@ export function ClientPipelineKanban({
               </thead>
               <tbody className="divide-y divide-border/60">
                 {filteredClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={client.id} className="cursor-pointer hover:bg-muted/40" onClick={() => onOpenClient(client)}>
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <Avatar className="h-7 w-7">
@@ -381,9 +374,10 @@ export function ClientPipelineKanban({
                       <select
                         className="h-7 text-xs rounded border border-border bg-background px-2"
                         value={client.stage}
+                        onClick={(event) => event.stopPropagation()}
                         onChange={(e) => onStageChange(client.id, e.target.value as PipelineStage)}
                       >
-                        {STAGES.map((s) => (
+                        {PIPELINE_STAGES.map((s) => (
                           <option key={s.id} value={s.id}>{s.label}</option>
                         ))}
                       </select>
@@ -405,7 +399,10 @@ export function ClientPipelineKanban({
                           variant="outline"
                           size="sm"
                           className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400"
-                          onClick={() => onSendWhatsAppQuick(client)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onSendWhatsAppQuick(client)
+                          }}
                         >
                           <MessageCircle className="h-3 w-3" />
                           <span>WhatsApp</span>
@@ -414,7 +411,10 @@ export function ClientPipelineKanban({
                           variant="secondary"
                           size="sm"
                           className="h-7 text-xs gap-1"
-                          onClick={() => onSelectClientForPortal(client)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onSelectClientForPortal(client)
+                          }}
                         >
                           <ExternalLink className="h-3 w-3" />
                           <span>Portal</span>

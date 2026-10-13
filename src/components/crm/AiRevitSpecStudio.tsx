@@ -108,7 +108,7 @@ Please output a comprehensive, structured Revit (LOD 350) technical design sched
               Model: {selectedModel.split('-')[0].toUpperCase()} {selectedModel.split('-')[1]}
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold font-serif tracking-tight text-foreground mt-1">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground mt-1">
             Intelligent BIM Specification Studio
           </h2>
           <p className="text-xs sm:text-sm text-muted-foreground">
@@ -193,7 +193,7 @@ Please output a comprehensive, structured Revit (LOD 350) technical design sched
               <Button
                 onClick={handleGenerate}
                 disabled={isProcessing}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs h-9 gap-2 shadow-xs shadow-amber-500/20"
+                className="w-full text-xs h-9 gap-2"
               >
                 {isProcessing ? (
                   <>
@@ -229,7 +229,7 @@ Please output a comprehensive, structured Revit (LOD 350) technical design sched
           <Card className="border-border/80 bg-card">
             <CardHeader className="pb-3 border-b border-border/50 flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-sm font-serif flex items-center gap-2 text-foreground">
+                <CardTitle className="text-sm flex items-center gap-2 text-foreground">
                   <FileCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   <span>{groqContent ? 'Groq AI Generated Specification' : 'Revit Parameter Specification'}</span>
                 </CardTitle>

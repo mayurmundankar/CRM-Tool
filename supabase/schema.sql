@@ -73,7 +73,21 @@ create table if not exists public.communication_logs (
   status text default 'delivered'
 );
 
--- 5. Invoices & Billing Table
+-- 5. Inquiries (leads before they become clients)
+create table if not exists public.inquiries (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  email text not null,
+  phone text,
+  property_type text not null default 'Penthouse',
+  budget numeric not null default 0,
+  lead_source text default 'Website',
+  message text,
+  status text not null default 'New',
+  created_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+-- 6. Invoices & Billing Table
 create table if not exists public.invoices (
   id uuid primary key default uuid_generate_v4(),
   project_id uuid references public.projects(id) on delete cascade,
@@ -93,6 +107,7 @@ alter table public.projects enable row level security;
 alter table public.deliverables enable row level security;
 alter table public.communication_logs enable row level security;
 alter table public.invoices enable row level security;
+alter table public.inquiries enable row level security;
 
 -- Public read/write policies for Demo & Service Client
 create policy "Allow all operations for anon/auth" on public.clients for all using (true) with check (true);
@@ -100,3 +115,4 @@ create policy "Allow all operations for anon/auth" on public.projects for all us
 create policy "Allow all operations for anon/auth" on public.deliverables for all using (true) with check (true);
 create policy "Allow all operations for anon/auth" on public.communication_logs for all using (true) with check (true);
 create policy "Allow all operations for anon/auth" on public.invoices for all using (true) with check (true);
+create policy "Allow all operations for anon/auth" on public.inquiries for all using (true) with check (true);

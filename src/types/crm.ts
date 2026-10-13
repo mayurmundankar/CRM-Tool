@@ -15,6 +15,10 @@ export type DesignStyle =
   | 'Neo-Classical'
   | 'Art Deco Modern'
 
+export type LeadSource = 'Referral' | 'Instagram' | 'Architect Partner' | 'Website' | 'Houzz'
+
+export type InquiryStatus = 'New' | 'Qualified' | 'Converted' | 'Archived'
+
 export type PipelineStage =
   | 'Lead Inbound'
   | 'Consultation & Discovery'
@@ -53,7 +57,7 @@ export interface Client {
   budget: number
   square_footage: number
   stage: PipelineStage
-  lead_source: 'Referral' | 'Instagram' | 'Architect Partner' | 'Website' | 'Houzz'
+  lead_source: LeadSource
   notes?: string
   created_at: string
   updated_at: string
@@ -97,7 +101,15 @@ export interface CommunicationLog {
   client_name: string
   channel: 'whatsapp' | 'email' | 'system'
   recipient_phone_or_email: string
-  trigger_type: 'milestone_completed' | 'plan_ready' | 'approval_request' | 'invoice_sent' | 'manual'
+  trigger_type:
+    | 'milestone_completed'
+    | 'plan_ready'
+    | 'approval_request'
+    | 'invoice_sent'
+    | 'stage_change'
+    | 'inquiry_converted'
+    | 'invoice_update'
+    | 'manual'
   message: string
   sent_at: string
   status: 'sent' | 'delivered' | 'read'
@@ -114,4 +126,17 @@ export interface Invoice {
   status: 'Paid' | 'Pending' | 'Overdue'
   issue_date: string
   due_date: string
+}
+
+export interface Inquiry {
+  id: string
+  name: string
+  email: string
+  phone: string
+  property_type: PropertyType
+  budget: number
+  lead_source: LeadSource
+  message: string
+  status: InquiryStatus
+  created_at: string
 }
