@@ -81,7 +81,7 @@ function buildProject(client: Client, now = new Date().toISOString()): Project {
 }
 
 function projectRow(project: Project) {
-  const row = { ...project }
+  const row: Partial<Project> = { ...project }
   delete row.deliverables_count
   return row
 }
